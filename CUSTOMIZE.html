@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- CUSTOMIZE: Page title -->
+  <title>Notes Search</title>
+
+  <!-- Inter font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Shared skin (same for all apps) -->
+  <link rel="stylesheet"
+        href="https://raw.githubusercontent.com/boldbeautifulyours-hash/notes-search-assets/main/app-skin.css?v=1">
+</head>
+
+<body>
+  <!-- CUSTOMIZE: Header text -->
+  <header><h2>Notes Search</h2></header>
+
+  <div class="container">
+    <div class="controls">
+      <!-- CUSTOMIZE: Placeholder text -->
+      <input id="q" type="text"
+             placeholder="Search Profile, Top Notes, Heart Notes, Base (press Enter)"
+             onkeydown="if(event.key==='Enter'){run()}">
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="inStockOnly">
+        <label for="inStockOnly">In stock only</label>
+      </div>
+
+      <button onclick="run()">Search</button>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <script>
+    // CUSTOMIZE: set the server handler this app should call
+    // Example for your notes app:
+    const SERVER = { fn: 'searchByNotesWithStockFilter' };
+    // For other apps, change to the appropriate server function name:
+    // const SERVER = { fn: 'searchByBrand' };
+    // const SERVER = { fn: 'searchOrders' };
+    // etc.
+
+    function run() {
+      const q = document.getElementById('q').value.trim();
+      const inStockOnly = document.getElementById('inStockOnly').checked;
+      const resultsDiv = document.getElementById('results');
+
+      if (!q) {
+        resultsDiv.innerHTML = '<p class="error">Please enter a search term.</p>';
+        return;
+      }
+
+      resultsDiv.innerHTML = "<p>Searching…</p>";
+
+      // Dynamic call to the chosen server function
+      // This works because google.script.run exposes methods by name.
+      const call = google.script.run
+        .withSuccessHandler(res => render(res, q))
+        .withFailureHandler(err => {
+          resultsDiv.innerHTML = `<p class="error">${err && err.message ? err.message : 'Search failed.'}</p>`;
+        });
+
+      if (inStockOnly !== undefined) {
+        call[SERVER.fn](q, inStockOnly);
+      } else {
+        call[SERVER.fn](q);
+      }
+    }
+
+    function render(results, q) {
+      const div = document.getElementById('results');
+      if (!Array.isArray(results) || results.length === 0) {
+        div.innerHTML = "<p><em>No matches found.</em></p>";
+        return;
+      }
+      if (results[0].error) {
+        div.innerHTML = `<p class="error">${esc(results[0].error)}</p>`;
+        return;
+      }
+
+      const qrx = safeRx(q);
+      div.innerHTML = results.map(r => {
+        const qty = Number.isFinite(r.qty) ? r.qty : (parseInt(r.qty, 10) || 0);
+        const img = r.imageUrl || 'https://via.placeholder.com/300x200?text=No+Image';
+        return `
+          <div class="card">
+            ${qty < 2 ? '<div class="badge">Low stock</div>' : ''}
+            <img class="img" src="${escAttr(img)}" alt="Image of ${escAttr(r.original || '')}"
+                 onerror="this.onerror=null;this.src='https://via.placeholder.com/300x200?text=No+Image';">
+            <div class="content">
+              <h4>${hl(esc(r.original || 'Unnamed Product'), qrx)}</h4>
+              <p><strong>Brand:</strong> ${hl(esc(r.brand || ''), qrx)}</p>
+              <p><strong>Dupe of:</strong> ${hl(esc(r.dupe || ''), qrx)}</p>
+              <p><strong>Profile:</strong> ${hl(esc(r.profile || ''), qrx)}</p>
+              <p><strong>Top Notes:</strong> ${hl(esc(r.topNotes || ''), qrx)}</p>
+              <p><strong>Heart Notes:</strong> ${hl(esc(r.heartNotes || ''), qrx)}</p>
+              <p><strong>Base:</strong> ${hl(esc(r.baseNotes || ''), qrx)}</p>
+              <p><strong>Qty:</strong> <span class="${qty < 2 ? 'low' : ''}">${qty}</span></p>
+              <span class="stock ${r.inStock ? 'in' : 'out'}">${r.inStock ? 'In Stock' : 'Out of Stock'}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Utilities shared across apps
+    function esc(s){
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+                      .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+                      .replace(/'/g,"&#039;");
+    }
+    function escAttr(s){
+      return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+    }
+    function safeRx(q){
+      const safe = String(q||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+      try{return new RegExp(safe,"gi");}catch(e){return null;}
+    }
+    function hl(text, rx){
+      return (!rx || !text) ? text : text.replace(rx, m => `<mark>${m}</mark>`);
+    }
+  </script>
+</body>
+</html>
